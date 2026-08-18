@@ -34,6 +34,7 @@ class GraphRetriever:
         Traverse the graph from start nodes up to max_depth hops.
         Collects paths of (source, relation_type, target, edge_status, edge_description).
         Supports traversing in both outgoing (downstream impact) and incoming (upstream dependency) directions.
+        Prevents cycle loops by tracking visited nodes along each path.
         """
         paths = []
         visited_paths = set()
@@ -42,9 +43,18 @@ class GraphRetriever:
             if depth >= max_depth:
                 return
 
+            # Extract all nodes visited in the current path to avoid cycles
+            path_nodes = {current_node}
+            for u, _, v, _, _ in current_path:
+                path_nodes.add(u)
+                path_nodes.add(v)
+
             # 1. Outgoing edges (downstream)
             if active_graph.has_node(current_node):
                 for _, neighbor, key, data in active_graph.out_edges(current_node, keys=True, data=True):
+                    if neighbor in path_nodes:
+                        continue # Prevent cycles
+                        
                     rel_type = data.get('relation_type', 'CONNECTED_TO')
                     status = data.get('status', 'Active')
                     desc = data.get('properties', {}).get('description', '')
@@ -61,12 +71,15 @@ class GraphRetriever:
             # 2. Incoming edges (upstream)
             if active_graph.has_node(current_node):
                 for parent, _, key, data in active_graph.in_edges(current_node, keys=True, data=True):
+                    if parent in path_nodes:
+                        continue # Prevent cycles
+                        
                     rel_type = data.get('relation_type', 'CONNECTED_TO')
                     status = data.get('status', 'Active')
                     desc = data.get('properties', {}).get('description', '')
                     
-                    # Store as parent -> rel_type -> current_node
-                    step = (parent, f"INVERSE_{rel_type}", current_node, status, desc)
+                    # Store as parent -> rel_type -> current_node (natural edge direction)
+                    step = (parent, rel_type, current_node, status, desc)
                     path_key = tuple(current_path + [step])
                     
                     if path_key not in visited_paths:
