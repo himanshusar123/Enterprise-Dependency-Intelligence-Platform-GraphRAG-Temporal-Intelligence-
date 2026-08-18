@@ -303,8 +303,7 @@ with tab2:
         fig = go.Figure(
             data=edge_traces + [mid_trace, node_trace],
             layout=go.Layout(
-                title=dict(text='Enterprise Dependency Topology Plot', font=dict(color='#58a6ff')),
-                titlefont_size=16,
+                title=dict(text='Enterprise Dependency Topology Plot', font=dict(color='#58a6ff', size=16)),
                 showlegend=False,
                 hovermode='closest',
                 margin=dict(b=20, l=5, r=5, t=40),
