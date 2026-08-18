@@ -94,32 +94,29 @@ class GraphRetriever:
         # Sort paths by length so shorter, more direct paths appear first
         return sorted(paths, key=len)
 
-    def format_paths_as_text(self, paths: List[List[Tuple[str, str, str, str, str]]], active_graph: nx.MultiDiGraph) -> str:
+    def format_paths_as_text(self, paths: List[List[Tuple[str, str, str, str, str]]], active_graph: nx.MultiDiGraph, matched_entities: Set[str], as_of_date: str) -> str:
         """
         Format the traversed paths and node metadata into a structured text context.
         """
-        if not paths:
-            return "No matching relationships found in the active knowledge graph."
-
         lines = []
-        lines.append("### Relevant Knowledge Graph Connections (Evidence Paths):")
-        
-        # Keep track of unique relationships described to avoid duplicate printouts
-        seen_relations = set()
-        
-        # Describe paths
-        for path in paths:
-            path_str = " -> ".join([f"[{u}] --({rel})--> [{v}]" for u, rel, v, status, desc in path])
-            if path_str not in seen_relations:
-                seen_relations.add(path_str)
-                lines.append(f"- Path: {path_str}")
-                # Print details of the steps
-                for u, rel, v, status, desc in path:
-                    desc_str = f" ({desc})" if desc else ""
-                    # lines.append(f"  * Relationship: {u} {rel} {v} | Status: {status}{desc_str}")
+        if paths:
+            lines.append("### Relevant Knowledge Graph Connections (Evidence Paths):")
+            
+            # Keep track of unique relationships described to avoid duplicate printouts
+            seen_relations = set()
+            
+            # Describe paths
+            for path in paths:
+                path_str = " -> ".join([f"[{u}] --({rel})--> [{v}]" for u, rel, v, status, desc in path])
+                if path_str not in seen_relations:
+                    seen_relations.add(path_str)
+                    lines.append(f"- Path: {path_str}")
+        else:
+            lines.append("### Relevant Knowledge Graph Connections (Evidence Paths):")
+            lines.append("No active relationship paths found starting from matching query entities in the graph.")
 
-        # Collect all unique nodes involved in the paths to print their attributes
-        involved_nodes = set()
+        # Collect all unique nodes involved in the paths, plus matched entities
+        involved_nodes = set(matched_entities)
         for path in paths:
             for u, _, v, _, _ in path:
                 involved_nodes.add(u)
@@ -127,12 +124,12 @@ class GraphRetriever:
 
         lines.append("\n### Involved Entity Profiles:")
         for node in involved_nodes:
-            if active_graph.has_node(node):
-                node_data = active_graph.nodes[node]
+            if self.store.graph.has_node(node):
+                node_data = self.store.graph.nodes[node]
                 entity_type = node_data.get('entity_type', 'Unknown')
                 props = node_data.get('properties', {})
-                status = node_data.get('status', 'Active')
-                desc = node_data.get('status_description', '')
+                # Resolve status dynamically based on target timeline date
+                status, desc = self.store._get_status_at(node_data['timeline'], as_of_date)
                 
                 props_str = ", ".join([f"{k}: {v}" for k, v in props.items() if k != 'extracted_by'])
                 props_display = f" ({props_str})" if props_str else ""
@@ -197,15 +194,15 @@ class HybridGraphRetriever:
         # 1. Get the active subgraph as of the requested date
         active_graph = self.store.get_active_subgraph(as_of_date)
         
-        # 2. Identify mentioned entities
-        matched_entities = self.graph_retriever.identify_entities_in_query(query, active_graph)
+        # 2. Identify mentioned entities using the FULL graph (so we match suspended/inactive nodes)
+        matched_entities = self.graph_retriever.identify_entities_in_query(query, self.store.graph)
         
         # 3. Perform multi-hop traversal from identified entities
         paths = []
         graph_context = ""
         if matched_entities:
             paths = self.graph_retriever.traverse_multi_hop(active_graph, matched_entities, max_depth)
-            graph_context = self.graph_retriever.format_paths_as_text(paths, active_graph)
+            graph_context = self.graph_retriever.format_paths_as_text(paths, active_graph, matched_entities, as_of_date)
         else:
             graph_context = "No entities mentioned in the query were found in the active knowledge graph."
 
